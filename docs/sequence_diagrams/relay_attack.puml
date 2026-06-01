@@ -1,0 +1,30 @@
+@startuml relay_attack
+title Relay Attack — Blocked by UWB Plausibility Checks
+
+actor "Owner\n(phone far away)" as Owner
+participant "Relay device A\n(near phone)" as RelayA
+participant "Relay device B\n(near car)" as RelayB
+participant "Vehicle\nUwbManager" as UWB
+
+Owner -> RelayA : legitimate BLE/UWB (9 m away)
+RelayA -> RelayB : forward over long-range link (adds latency)
+RelayB -> UWB    : replay UWB ranging (claims NEAR)
+
+note over UWB
+  Defence 1: time-of-flight
+  relay latency inflates ToF
+  ToF > UWB_MAX_TOF_NS  -> reject
+end note
+UWB --> RelayB : REJECTED (relay_suspected latched)
+
+RelayB -> UWB : retry with faked low ToF + NEAR distance
+note over UWB
+  Defence 2: distance-rate
+  900 cm -> 10 cm in 100 ms
+  rate > 500 cm/s  -> reject
+  suspicion is LATCHED for the session
+end note
+UWB --> RelayB : REJECTED (zone forced FAR)
+
+note over UWB : even a valid HMAC cannot reach NEAR -> UNLOCK DENIED
+@enduml

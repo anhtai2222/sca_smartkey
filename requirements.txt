@@ -1,0 +1,15 @@
+# SCA Smart Key — Python simulator dependencies (pinned).
+# Tested with Python 3.10 - 3.12.
+#
+# The core simulation + tests run on the Python standard library ONLY
+# (hashlib, hmac, secrets) — no third-party package is required to run
+# full_demo.py, attack_sim.py or the pytest suite.
+#
+# pytest is needed only to run the test suite; bleak is OPTIONAL and only
+# needed if you replace the in-process VirtualBleLink with a real BLE adapter
+# to talk to physical ESP32 hardware.
+
+pytest==8.3.3
+
+# Optional — real-hardware BLE client (not required for simulation):
+# bleak==0.22.3

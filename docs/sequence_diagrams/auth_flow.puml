@@ -1,0 +1,59 @@
+@startuml auth_flow
+title SCA Smart Key — Full Authentication Sequence
+
+actor "User\n(Phone)" as User
+participant "Phone\n(BLE+UWB+NFC client)" as Phone
+participant "Vehicle\nBLE GATT Server" as BLE
+participant "AuthEngine\n(HMAC + nonce pool)" as Auth
+participant "UwbManager" as UWB
+participant "NfcManager" as NFC
+participant "AccessController\n(state machine)" as FSM
+participant "GpioActuator\n(relay/LED)" as GPIO
+
+== Discovery & Connection ==
+User -> Phone : approach vehicle
+Phone -> BLE  : scan + connect (SCA-SmartKey)
+BLE -> FSM    : BLE_CONNECT
+FSM -> GPIO   : LED = BLUE (authenticating)
+BLE -> Auth   : new_challenge(conn_handle)
+Auth --> BLE  : nonce (32B)
+BLE -> Phone  : notify CHALLENGE(nonce)
+BLE -> Phone  : MTU negotiate (247)
+
+== NFC verification ==
+User -> NFC   : tap phone / tag
+NFC -> NFC    : UID in whitelist?
+NFC -> FSM    : NFC_OK / NFC_FAIL
+note right of FSM : NFC_FAIL -> IDLE + 5s penalty
+
+== UWB proximity ==
+loop ranging @100ms
+  Phone -> UWB : TWR exchange (T_round, T_reply)
+  UWB -> UWB   : d = c*(T_round - T_reply)/2
+  UWB -> UWB   : ToF + distance-rate plausibility
+  UWB -> FSM   : zone (NEAR / MEDIUM / FAR)
+end
+note right of UWB : relay -> latched FAR -> deny
+
+== HMAC challenge-response ==
+Phone -> Phone : hmac = HMAC-SHA256(nonce, secret)
+Phone -> BLE   : write RESPONSE(nonce || hmac)
+BLE -> Auth    : verify_response(conn_handle, nonce, hmac)
+Auth -> Auth   : known? not expired? not consumed?\nhandle bound? hmac match?
+alt all checks pass AND NFC_OK AND zone == NEAR
+  Auth --> BLE : OK
+  BLE -> FSM   : AUTH_OK
+  FSM -> GPIO  : PULSE_UNLOCK (relay 500ms, LED GREEN)
+  GPIO --> User: door UNLOCKED
+else any check fails
+  Auth --> BLE : BAD_HMAC / REPLAYED / EXPIRED / HANDLE_MISMATCH
+  BLE -> FSM   : AUTH_FAIL
+  FSM -> GPIO  : LED RED, 5s penalty
+  note right of FSM : 3 fails -> 60s LOCKOUT + log event
+end
+
+== Departure ==
+Phone -> UWB  : distance increases
+UWB -> FSM    : UWB_FAR
+FSM -> GPIO   : DRIVE_LOCK (LED RED)
+@enduml
